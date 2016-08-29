@@ -5,9 +5,6 @@ import itertools
 import functools
 import json
 import collections
-action_q = asyncio.Queue()#agent generates actions to be consumed by environment
-sensing_q = asyncio.Queue(maxsize = 1024)#environment generates state modifiers and rewards to be consumed by agent
-
 
 class Agent:
 	def __init__(self, actions_states, state_rewards, initial_state, initial_action, learning_method):
@@ -15,21 +12,24 @@ class Agent:
 		self.states = collections.deque(maxlen=5)
 		self.states.append((initial_state,initial_action)) #a LIFO queue of state, action tuples - most recent in last position
 		self.state_rewards = state_rewards #a function with args (previous state, new state) returns values rewards
-	def state_writer(self, new_state):
- 		pass
+		self.action_q = asyncio.Queue()#agent generates actions to be consumed by environment
+		self.sensing_q = asyncio.Queue(maxsize = 1024)#environment generates state modifiers and rewards to be consumed by agent
+		self.sensing_q.put_nowait((1, initial_action))
 	@asyncio.coroutine
 	def experience_environment(self):
 		"""experiences results of actions from environment, and creates an observation"""
 		while True:
-			state_modifier = yield from sensing_q.get()
-			print('pending actions: ',[i for i in sensing_q._queue if i[0] == 0])
+			state_modifier = yield from self.sensing_q.get()
+			print('got a state modifier ', state_modifier)
 			previous_state, previous_action = self.states[-1]
+			print('previous: ', previous_state, previous_action)
 			tochange = previous_state
 			new_state = state_modifier[1](tochange)
-			self.state_writer(new_state)
+			print('changed: ', new_state)
 			reward = self.state_rewards(previous_state, new_state)
 			if new_state != previous_state:
 				new_action = self.act(new_state)
+				print('learning: ', previous_state, previous_action, new_state)
 				self.learn_from_experience(new_state, reward, new_action)
 				action_q.put_nowait((new_state,new_action))
 				self.states.append((new_state, new_action))
@@ -50,17 +50,19 @@ class Agent:
 		return action
 
 class Environment:
-	def __init__(self,reactions,actions):
+	def __init__(self,reactions,actions, sensing_q, action_q):
 		"""envreactions is a dictionary with valid modifying functions
 		for each state,action pair"""
 		self.env_reactions = reactions
 		self.env_actions = actions
+		self.sensing_q = sensing_q
+		self.action_q = action_q
 	@asyncio.coroutine
 	def react_to_action(self):
 		while True:
-			state, action = yield from action_q.get()
+			state, action = yield from self.action_q.get()
 			modifier = self.modify_state(state, action)
-			sensing_q.put_nowait((0,modifier))
+			self.sensing_q.put_nowait((0,modifier))
 			print('put it on the q')
 	def modify_state(self, state, action):
 		"""based on state and action find the valid environment 
