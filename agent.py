@@ -28,10 +28,10 @@ class Agent:
 			print('changed: ', new_state)
 			reward = self.state_rewards(previous_state, new_state)
 			if new_state != previous_state:
+				print('change in state')
 				new_action = self.act(new_state)
-				print('learning: ', previous_state, previous_action, new_state)
 				self.learn_from_experience(new_state, reward, new_action)
-				action_q.put_nowait((new_state,new_action))
+				self.action_q.put_nowait((new_state,new_action))
 				self.states.append((new_state, new_action))
 			else:
 				print('no change in state', new_state, previous_state)

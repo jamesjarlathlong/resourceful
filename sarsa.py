@@ -23,10 +23,12 @@ class Sarsa:
 
     def chooseAction(self, state):
         available_actions = self.actions[state]
+        print('available: ', available_actions)
         if random.random() < self.epsilon:
             action = random.choice(available_actions)
         else:
             q = [self.getQ(state, a) for a in available_actions]
+            print('q: ', q)
             maxQ = max(q)
             count = q.count(maxQ)
             #in the event of a tied max Q value
