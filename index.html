@@ -1,0 +1,44 @@
+<!DOCTYPE html>  <meta charset="utf-8">
+<html>
+    <head>
+    <link rel="stylesheet" href="/home/jjlong/resourceful/public/bower_components/bootstrap/dist/css/bootstrap.css">
+    <script src='/home/jjlong/resourceful/public/bower_components/jquery/dist/jquery.js'></script>
+    <script src='/home/jjlong/resourceful/public/bower_components/bootstrap/dist/js/bootstrap.js'></script>
+    <script src='/home/jjlong/resourceful/public/bower_components/angular/angular.js'></script>
+    <script src='/home/jjlong/resourceful/public/bower_components/angular-websocket/dist/angular-websocket.js'></script>
+    <script src='/home/jjlong/resourceful/public/bower_components/plotlyjs/plotly.js'></script>
+    <script src="/home/jjlong/resourceful/public/app.js" type="text/javascript"></script>
+    <script src="/home/jjlong/resourceful/public/services.js" type="text/javascript"></script>
+    <script src="/home/jjlong/resourceful/public/controllers.js" type="text/javascript"></script>
+        <title>WebSocket demo</title>
+    </head>
+    <body ng-app ='mainapp'>
+    <div class = 'container-fluid' ng-controller= 'defaultController'>
+    <svg width = 900 height = 700>
+    <g ng-repeat="sensor in sensors">
+    <circle ng-attr-cx = "{{sensor.x}}" 
+          ng-attr-cy = "{{sensor.y}}"
+          ng-attr-fill = "#525252"
+          r = 5>
+    </circle>
+    <path id="arc1"
+          fill="none"
+          stroke="#446688"
+          stroke-width="18"
+          ng-attr-d="{{describeArc(sensor.x,sensor.y,100,0,sensor.battery)}}"
+    />
+    <path id="arc2"
+          fill="none"
+          stroke="#F05F40"
+          stroke-width="20"
+          opacity = "0.2"
+          ng-attr-d="{{describeArc(sensor.x,sensor.y,100,0,359)}}"
+    />
+    <text ng-attr-x = "{{sensor.x-10}}" 
+          ng-attr-y = "{{sensor.y-300}}"
+          dy = "20em">{{sensor.status+' '+sensor.batt_percent+'%'}}
+    </text>
+    </g>
+    </svg>
+    </body>
+</html>

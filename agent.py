@@ -7,14 +7,16 @@ import json
 import collections
 
 class Agent:
-	def __init__(self, actions_states, state_rewards, initial_state, initial_action, learning_method):
+	def __init__(self, actions_states, state_rewards, initial_state, initial_action, learning_method, qsize):
 		self.learner = learning_method(actions_states)
 		self.states = collections.deque(maxlen=5)
 		self.states.append((initial_state,initial_action)) #a LIFO queue of state, action tuples - most recent in last position
 		self.state_rewards = state_rewards #a function with args (previous state, new state) returns values rewards
 		self.action_q = asyncio.Queue()#agent generates actions to be consumed by environment
-		self.sensing_q = asyncio.Queue(maxsize = 1024)#environment generates state modifiers and rewards to be consumed by agent
+		self.sensing_q = asyncio.PriorityQueue(maxsize = qsize)#environment generates state modifiers and rewards to be consumed by agent
 		self.sensing_q.put_nowait((1, initial_action))
+	def writer(self, state):
+		pass
 	@asyncio.coroutine
 	def experience_environment(self):
 		"""experiences results of actions from environment, and creates an observation"""
@@ -22,13 +24,11 @@ class Agent:
 			state_modifier = yield from self.sensing_q.get()
 			print('got a state modifier ', state_modifier)
 			previous_state, previous_action = self.states[-1]
-			print('previous: ', previous_state, previous_action)
 			tochange = previous_state
 			new_state = state_modifier[1](tochange)
-			print('changed: ', new_state)
 			reward = self.state_rewards(previous_state, new_state)
 			if new_state != previous_state:
-				print('change in state')
+				self.writer(new_state)
 				new_action = self.act(new_state)
 				self.learn_from_experience(new_state, reward, new_action)
 				self.action_q.put_nowait((new_state,new_action))
@@ -63,7 +63,7 @@ class Environment:
 			state, action = yield from self.action_q.get()
 			modifier = self.modify_state(state, action)
 			self.sensing_q.put_nowait((0,modifier))
-			print('put it on the q')
+			print('sensing q: ',self.sensing_q.qsize(), self.sensing_q._queue)
 	def modify_state(self, state, action):
 		"""based on state and action find the valid environment 
 		function, combine the action modification and env mod
