@@ -21,6 +21,7 @@ class Agent:
 	def experience_environment(self):
 		"""experiences results of actions from environment, and creates an observation"""
 		while True:
+			yield from asyncio.sleep(0)
 			state_modifier = yield from self.sensing_q.get()
 			print('got a state modifier ', state_modifier)
 			previous_state, previous_action = self.states[-1]
@@ -62,6 +63,7 @@ class Environment:
 		while True:
 			state, action = yield from self.action_q.get()
 			modifier = self.modify_state(state, action)
+			print('sensing q before: ',self.sensing_q.qsize(), self.sensing_q._queue)
 			self.sensing_q.put_nowait((0,modifier))
 			print('sensing q: ',self.sensing_q.qsize(), self.sensing_q._queue)
 	def modify_state(self, state, action):

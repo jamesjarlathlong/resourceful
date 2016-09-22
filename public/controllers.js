@@ -27,11 +27,12 @@ controller('defaultController', ['$scope', '$http','mySocket','$window',
       var _id = msg['_id']
       var batt = msg['battery']
       var status = msg['status']
+      var neighbour = msg['neighbour']
       var num_sensors = $scope.sensors.length
       var spacing = 400
       var level = Math.min(359, Math.max(batt*360/5,5))
       var percent = Math.round(100*batt/5)
       $scope.sensors[_id] = {'x':200+(spacing*_id), 'y': 200,'batt_percent':percent,
-                              'status':status,'battery':level,'c':colors[_id], '_id':_id}
+                              'status':status,'neighbour':neighbour, 'battery':level,'c':colors[_id], '_id':_id}
   })
 }])

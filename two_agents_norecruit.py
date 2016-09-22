@@ -12,7 +12,8 @@ import collections
 import websockets
 import json
 import copy
-import time 
+import time
+import random
 ###Helper functions###
 def merge(dicts):
     super_dict = collections.defaultdict(list)
@@ -33,19 +34,13 @@ def dictionary_saver(d, filename):
 #======actions========#
 def go_to_sleep(old):
     new = old._replace(status = 'sleeping')
-    if new.status!=old.status:
-        print('broadcasting change')
-        broadcast_change(old, new)
     return new
 def wakeup(old):
     new = old._replace(status = 'running')
-    if new.status!=old.status:
-        print('broadcasting change')
-        broadcast_change(old, new)
     return new
 def noop(old):
     print('noop')
-    return old
+    return copy.deepcopy(old)
 def create_action_states(states):
     actions_states_sleeping = {i:[noop, wakeup] for i in states if i.status=='sleeping'}
     actions_states_running = {i:[go_to_sleep, noop] for i in states if i.status == 'running'}
@@ -53,11 +48,15 @@ def create_action_states(states):
 #####rewards###########
 def state_rewards(state1, state2):
     if state2.battery == 0:
-        return -10
+        return -20
+    elif state1.status !=state2.status:
+        return -1
     elif (state2.status == 'sleeping' and state2.neighbour=='sleeping'):
-        return -5
-    else:
-        return 2
+        return -15
+    elif state2.status =='running' or state2.neighbour=='running':
+        return 5
+    else: 
+        return 0
 ###message passing
 def find_lead(qs,recruiter):
     """for recruiter, find potential helper"""
@@ -72,8 +71,9 @@ def broadcast_change(old_state, new_state):
         return new_self
     update_from = type(new_state).__name__
     update_to = find_lead(qs, update_from)
+    print('updating from: ', update_from, ' to: ', update_to)
     neighbor_change_func = functools.partial(neighbor_changed,old_state, new_state)
-    qs[update_to].put_nowait((1,neighbor_change_func))     
+    qs[update_to].update((1,neighbor_change_func))     
 """environments"""
 #=====autonomous actions=======#
 @asyncio.coroutine
@@ -95,10 +95,16 @@ def battery_action(q):
         if random.random()<0.1:
             sunny = not sunny
         adjust_battery_sunny = functools.partial(adjust_battery, sunny)
-        yield from asyncio.sleep(0.4)
-        q.put_nowait((1,adjust_battery_sunny))
+        yield from asyncio.sleep(1)
+        print('putting battery action on the q: ',q.qsize(),  q._queue)
+        priority = random.uniform(2.01, 2.99) #we don't care about the order of adjust battery actions
+        #just want to make sure they don't collide
+        q.put_nowait((priority,adjust_battery_sunny))
 #======reactions to agent actions==========#
 def reaction_default(state1,state2, action):
+    if state1.status!=state2.status:
+        print('broadcasting change')
+        broadcast_change(state1, state2)
     return state2
 """speak to outside world"""
 def writer(self, state):
@@ -106,14 +112,27 @@ def writer(self, state):
     name_id_map = {'Sensor1':0, 'Sensor2':1}
     idee = name_id_map[type(state).__name__]
     print('idee: ',idee)
-    update = {'_id':idee, 'battery':state.battery, 'status':state.status}
+    update = {'_id':idee, 'battery':state.battery, 'status':state.status, 'neighbour': state.neighbour}
     writerq.put_nowait(update)
 @asyncio.coroutine
 def socketwriter(websocket, path):
     while True:
         msg = yield from writerq.get()
         yield from websocket.send(json.dumps(msg))
-
+"""special update function to ensure only latest event
+   with info about neighbour is kept on the queue"""
+def update(self, new_item):
+    priority_level = new_item[0]
+    def matching_level(element, priority_level):
+        return element[0]==priority_level
+    try:
+        match_generator = (index for index,element in enumerate(self._queue)
+                           if matching_level(element, priority_level))
+        matching_index = next(match_generator)
+        self._queue[matching_index] = new_item
+    except StopIteration:
+        self.put_nowait(new_item)
+asyncio.PriorityQueue.update = update
 if __name__ == '__main__':
     """States"""
     battery = range(6)
