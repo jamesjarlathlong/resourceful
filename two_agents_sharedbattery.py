@@ -24,8 +24,8 @@ def merge(dicts):
 def tuple_namer(name,tupl):
     """convert an unnamed state tuple
     to a namedtuple object"""
-    tupl_templ = collections.namedtuple(name, 'battery status neighbour')
-    named = tupl_templ(battery = tupl[0], status = tupl[1], neighbour = tupl[2])
+    tupl_templ = collections.namedtuple(name, 'battery status neighbour nstat')
+    named = tupl_templ(battery = tupl[0], status = tupl[1], neighbour = tupl[2], nstat = tupl[3])
     return named
 def dictionary_saver(d, filename):
     """d is a dictionary whose keys are of the form (namedtuple, 'string')"""
@@ -52,12 +52,12 @@ def create_action_states(states):
 #####rewards###########
 def state_rewards(state1, state2):
     initial_reward = 0
-    if (state2.status == 'sleeping' and state2.neighbour=='sleeping'):
+    if (state2.status == 'sleeping' and state2.nstat=='sleeping'):
         initial_reward -=50
-    if state2.status =='running' or state2.neighbour=='running':
-        initial_reward += 50
+    if state2.status =='running' or state2.nstat=='running':
+        initial_reward += 20
     if state1.status !=state2.status:
-        initial_reward -= 2.5
+        initial_reward -= 5
     if state2.battery == 0:
         initial_reward = -50
     return initial_reward
@@ -71,7 +71,7 @@ def broadcast_change(old_state, new_state):
     from sleeping to awake, notifies the other
     sensors of this change"""
     def neighbor_changed(old_other, new_other,old_self):
-        new_self = old_self._replace(neighbour=new_other.status)
+        new_self = old_self._replace(neighbour=new_other.battery, nstat= new_other.status)
         return new_self
     update_from = type(new_state).__name__
     update_to = find_lead(qs, update_from)
@@ -92,8 +92,8 @@ def battery_action(q):
             sensor = sensor._replace(battery=new_battery)
         if sensor.battery<=0:
             sensor = sensor._replace(battery=0)
-        if sensor.battery>=20:
-            sensor = sensor._replace(battery=20)
+        if sensor.battery>=10:
+            sensor = sensor._replace(battery=10)
         return sensor
     while True:
         #if random.random()<0.1:
@@ -106,19 +106,18 @@ def battery_action(q):
         q.put_nowait((priority,adjust_battery_sunny))
 #======reactions to agent actions==========#
 def reaction_default(state1,state2, action):
-    if state1.status!=state2.status:
+    if state1.battery!=state2.battery or state1.status!=state2.status:
         print('broadcasting change')
         broadcast_change(state1, state2)
     return state2
 """speak to outside world"""
 def writer(self, state):
-    t = self.loop.time()
+    t = self.loop.time()-self.loop.t0
     name_id_map = {'Sensor1':0, 'Sensor2':1}
     idee = name_id_map[type(state).__name__]
-    update = {'_id':idee, 'battery':state.battery, 'status':state.status, 'neighbour': state.neighbour}
+    update = (t,{'_id':idee, 'battery':state.battery, 'status':state.status, 'neighbour': state.neighbour})
     print('update: ', update)
-    #writerq.put_nowait((t,update))
-    #print('put it on the writerq')
+    writerq.append(update)
 @asyncio.coroutine
 def socketwriter(websocket, path):
     while True:
@@ -141,37 +140,38 @@ def update(self, new_item):
 asyncio.PriorityQueue.update = update
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
+    t0 = loop.time()
+    loop.t0 = t0
     """States"""
-    battery = range(21)
+    battery = range(11)
     status = ['sleeping', 'running']
-    neighbour = ['sleeping', 'running']
-    all_vars = [battery,status, neighbour]
+    neighbour = range(11)
+    nstat = ['sleeping', 'running']
+    all_vars = [battery,status, neighbour, nstat]
     state_combinations = list(itertools.product(*all_vars))
     """websocket comm"""
     Agent.writer = writer
     """agent 1"""
     states1 = [tuple_namer('Sensor1', i) for i in state_combinations]
-    initial_state1 = tuple_namer('Sensor1', (3,'running', 'running'))
+    initial_state1 = tuple_namer('Sensor1', (3,'running', 6, 'running'))
     actions_states1 = create_action_states(states1)
     agent1 = Agent(actions_states1, state_rewards, initial_state1, wakeup, Sarsa, 1011, loop)
     """agent 2"""
     states2 = [tuple_namer('Sensor2', i) for i in state_combinations]
-    initial_state2 = tuple_namer('Sensor2', (16,'running', 'sleeping'))
+    initial_state2 = tuple_namer('Sensor2', (6,'running', 3, 'running'))
     actions_states2 = create_action_states(states2)
     agent2 = Agent(actions_states2, state_rewards, initial_state2, wakeup, Sarsa, 1022, loop)
     """message passing between agents"""
     qs = {'Sensor1':agent1.sensing_q, 'Sensor2':agent2.sensing_q}
     """message passing to websocket"""
-    writerq = asyncio.PriorityQueue(maxsize = 2048)
-    start_server = websockets.serve(socketwriter, '127.0.0.1', 8080)
+    writerq = []#asyncio.PriorityQueue(maxsize = 2048)
+    start_server = websockets.serve(socketwriter, '127.0.0.1', 8090)
     """now define our environments"""
     env_reactions = {'go_to_sleep':reaction_default, 'wakeup':reaction_default,
                  'noop':reaction_default}
     env1 = Environment(env_reactions,[copy.deepcopy(battery_action)], agent1.sensing_q, agent1.action_q)
     env2 = Environment(env_reactions,[copy.deepcopy(battery_action)], agent2.sensing_q, agent2.action_q)
-
     """now run the simulation"""
-    
     tasks = [agent1.experience_environment(), env1.react_to_action(),
              agent2.experience_environment(), env2.react_to_action(),start_server]
     for i in env1.env_actions:
@@ -180,14 +180,13 @@ if __name__ == '__main__':
         tasks.append(j(agent2.sensing_q))
     def loop_stopper():
         print('loop stopper')
-        writerq._queue = []
         loop.stop()
         print('saving')
-        dictionary_saver(agent1.learner.q, 'agent1_consolidate')
-        tracker_saver(agent1.learner.updatecount, 'agent1_hist')
-        dictionary_saver(agent2.learner.q, 'agent2_consolidate')
-        tracker_saver(agent2.learner.updatecount, 'agent2_hist')
-        print('saved')
-        
-    loop.call_later(600, loop_stopper) 
+        sklearn.externals.joblib.dump(writerq, 'batt_writer')
+        dictionary_saver(agent1.learner.q, 'agent1_batt')
+        tracker_saver(agent1.learner.updatecount, 'agent1_batthist')
+        dictionary_saver(agent2.learner.q, 'agent2_batt')
+        tracker_saver(agent2.learner.updatecount, 'agent2_batthist')
+        print('saved')     
+    loop.call_later(1800, loop_stopper) 
     loop.run_until_complete(asyncio.wait(tasks))

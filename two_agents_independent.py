@@ -39,6 +39,9 @@ def tracker_saver(d, filename):
 def go_to_sleep(old):
     new = old._replace(status = 'sleeping')
     return new
+def prepare_sleep(old):
+    new = old._replace(status = 'pending')
+    return new
 def wakeup(old):
     new = old._replace(status = 'running')
     return new
@@ -47,14 +50,15 @@ def noop(old):
     return copy.deepcopy(old)
 def create_action_states(states):
     actions_states_sleeping = {i:[noop, wakeup] for i in states if i.status=='sleeping'}
-    actions_states_running = {i:[go_to_sleep, noop] for i in states if i.status == 'running'}
-    return merge([actions_states_sleeping, actions_states_running]) 
+    actions_states_running = {i:[prepare_sleep, noop] for i in states if i.status == 'running'}
+    actions_states_pending = {i:[go_to_sleep] for i in states if i.status == 'pending'}
+    return merge([actions_states_sleeping, actions_states_running, actions_states_pending]) 
 #####rewards###########
 def state_rewards(state1, state2):
     initial_reward = 0
-    if (state2.status == 'sleeping' and state2.neighbour=='sleeping'):
+    if (state2.status == 'sleeping'):# and state2.neighbour=='sleeping'):
         initial_reward -=50
-    if state2.status =='running' or state2.neighbour=='running':
+    if state2.status =='running':# or state2.neighbour=='running':
         initial_reward += 50
     if state1.status !=state2.status:
         initial_reward -= 2.5
@@ -99,7 +103,7 @@ def battery_action(q):
         #if random.random()<0.1:
         #    sunny = not sunny
         adjust_battery_sunny = functools.partial(adjust_battery, sunny)
-        yield from asyncio.sleep(0.2)
+        yield from asyncio.sleep(0.15)
         print('putting battery action on the q: ',q.qsize(),  q._queue)
         priority = random.uniform(2.01, 2.99) #we don't care about the order of adjust battery actions
         #just want to make sure they don't collide
@@ -117,7 +121,7 @@ def writer(self, state):
     idee = name_id_map[type(state).__name__]
     update = {'_id':idee, 'battery':state.battery, 'status':state.status, 'neighbour': state.neighbour}
     print('update: ', update)
-    #writerq.put_nowait((t,update))
+    writerq.append((t,update))
     #print('put it on the writerq')
 @asyncio.coroutine
 def socketwriter(websocket, path):
@@ -143,8 +147,8 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     """States"""
     battery = range(21)
-    status = ['sleeping', 'running']
-    neighbour = ['sleeping', 'running']
+    status = ['sleeping', 'running','pending']
+    neighbour = ['sleeping', 'running','pending']
     all_vars = [battery,status, neighbour]
     state_combinations = list(itertools.product(*all_vars))
     """websocket comm"""
@@ -162,32 +166,30 @@ if __name__ == '__main__':
     """message passing between agents"""
     qs = {'Sensor1':agent1.sensing_q, 'Sensor2':agent2.sensing_q}
     """message passing to websocket"""
-    writerq = asyncio.PriorityQueue(maxsize = 2048)
+    writerq = []#asyncio.PriorityQueue(maxsize = 2048)
     start_server = websockets.serve(socketwriter, '127.0.0.1', 8080)
     """now define our environments"""
     env_reactions = {'go_to_sleep':reaction_default, 'wakeup':reaction_default,
-                 'noop':reaction_default}
+                 'noop':reaction_default, 'prepare_sleep':reaction_default}
     env1 = Environment(env_reactions,[copy.deepcopy(battery_action)], agent1.sensing_q, agent1.action_q)
     env2 = Environment(env_reactions,[copy.deepcopy(battery_action)], agent2.sensing_q, agent2.action_q)
 
     """now run the simulation"""
     
     tasks = [agent1.experience_environment(), env1.react_to_action(),
-             agent2.experience_environment(), env2.react_to_action(),start_server]
+             agent2.experience_environment(), env2.react_to_action()]#,start_server]
     for i in env1.env_actions:
         tasks.append(i(agent1.sensing_q))
     for j in env2.env_actions:
         tasks.append(j(agent2.sensing_q))
     def loop_stopper():
-        print('loop stopper')
-        writerq._queue = []
-        loop.stop()
         print('saving')
-        dictionary_saver(agent1.learner.q, 'agent1_consolidate')
-        tracker_saver(agent1.learner.updatecount, 'agent1_hist')
-        dictionary_saver(agent2.learner.q, 'agent2_consolidate')
-        tracker_saver(agent2.learner.updatecount, 'agent2_hist')
+        dictionary_saver(agent1.learner.q, 'agent1_ind')
+        tracker_saver(agent1.learner.updatecount, 'agent1_indhist')
+        dictionary_saver(agent2.learner.q, 'agent2_ind')
+        tracker_saver(agent2.learner.updatecount, 'agent2_indhist')
+        sklearn.externals.joblib.dump(writerq, 'ind_writer')
         print('saved')
-        
+        loop.stop()
     loop.call_later(600, loop_stopper) 
     loop.run_until_complete(asyncio.wait(tasks))

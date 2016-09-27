@@ -1,10 +1,11 @@
 import random
-
+import sklearn
+import collections
 
 class Sarsa:
-    def __init__(self, actions, epsilon=0.1, alpha=0.2, gamma=0.9):
+    def __init__(self, actions, epsilon=0.1, alpha=0.2, gamma=0.99):
         self.q = {}
-
+        self.updatecount = collections.defaultdict(list)
         self.epsilon = epsilon
         self.alpha = alpha
         self.gamma = gamma
@@ -20,6 +21,7 @@ class Sarsa:
             self.q[(state, action.__name__)] = reward
         else:
             self.q[(state, action.__name__)] = oldv + self.alpha * (value - oldv)
+            self.updatecount[(state, action.__name__)].append(oldv + self.alpha * (value - oldv))
 
     def chooseAction(self, state):
         available_actions = self.actions[state]
