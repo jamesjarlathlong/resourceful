@@ -3,7 +3,7 @@ import sklearn
 import collections
 
 class Sarsa:
-    def __init__(self, actions, epsilon=0.1, alpha=0.2, gamma=0.99):
+    def __init__(self, actions, epsilon=0.2, alpha=0.2, gamma=0.99):
         self.q = {}
         self.updatecount = collections.defaultdict(list)
         self.epsilon = epsilon
@@ -27,6 +27,7 @@ class Sarsa:
         available_actions = self.actions[state]
         print('available: ', available_actions)
         if random.random() < self.epsilon:
+            print('random choice')
             action = random.choice(available_actions)
         else:
             q = [self.getQ(state, a) for a in available_actions]
@@ -44,6 +45,6 @@ class Sarsa:
         return action
 
     def learn(self, state1, action1, reward, state2, action2):
-        print('learning: ', state1, action1, state2, reward)
+        print('learning: ', state1, action1, state2, reward, action2)
         qnext = self.getQ(state2, action2)
         self.learnQ(state1, action1, reward, reward + self.gamma * qnext)
