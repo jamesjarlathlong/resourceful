@@ -3,7 +3,7 @@ import sklearn
 import collections
 
 class Sarsa:
-    def __init__(self, actions, epsilon=0.2, alpha=0.2, gamma=0.99):
+    def __init__(self, actions, epsilon=0.1, alpha=0.2, gamma=0.99):
         self.q = {}
         self.updatecount = collections.defaultdict(list)
         self.epsilon = epsilon

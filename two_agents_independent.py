@@ -60,7 +60,7 @@ def state_rewards(state1, state2):
     if state2.status =='running':
         initial_reward += 100
     if state1.status != state2.status:
-        initial_reward -= 25
+        initial_reward -= 20
     if state2.battery == 0:#:
         initial_reward = -100
     return initial_reward
@@ -161,7 +161,7 @@ if __name__ == '__main__':
     """message passing between agents"""
     qs = {'Sensor1':agent1.sensing_q, 'Sensor2':agent2.sensing_q}
     """message passing to websocket"""
-    writerq = collections.deque([], maxlen=1000)#asyncio.PriorityQueue(maxsize = 2048)
+    writerq = collections.deque([], maxlen=10000)#asyncio.PriorityQueue(maxsize = 2048)
     """now define our environments"""
     env_reactions = {'go_to_sleep':reaction_default, 'wakeup':reaction_default,
                  'noop':reaction_default, 'prep_sleep': reaction_default}
@@ -184,5 +184,5 @@ if __name__ == '__main__':
         dictionary_saver(agent2.learner.q, 'agent2_ind')
         tracker_saver(agent2.learner.updatecount, 'agent2_indhist')
         print('saved')     
-    loop.call_later(200, loop_stopper) 
+    loop.call_later(20, loop_stopper) 
     loop.run_until_complete(asyncio.wait(tasks))
